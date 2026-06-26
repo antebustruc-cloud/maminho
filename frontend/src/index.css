@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+@theme {
+  --color-pitch-900: #0e1b14;
+  --color-pitch-800: #16271e;
+  --color-pitch-700: #1d3327;
+  --color-pitch-600: #2a4536;
+  --color-gold-500: #d9a441;
+  --color-gold-300: #f0cd86;
+  --color-cream-100: #f1efe6;
+  --color-mute-400: #8c9a8f;
+  --color-red-500: #c75c4d;
+
+  --font-display: "Oswald", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-pitch-900);
+    color: var(--color-cream-100);
+    font-family: var(--font-body);
+  }
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  input, select {
+    background-color: var(--color-pitch-900);
+    border: 1px solid var(--color-pitch-600);
+    color: var(--color-cream-100);
+  }
+}
+
+/*
+  Reusable patterns -- our "signature" components, kept as named classes so
+  the scoreboard/ledger aesthetic stays consistent everywhere it's used,
+  instead of re-deriving the same utility stack in every page.
+*/
+@layer components {
+  .kc-ticker {
+    @apply bg-pitch-900 border border-pitch-600 border-b-2 border-b-gold-500 rounded px-3 py-2.5;
+  }
+  .kc-ticker .label {
+    @apply text-[11px] text-mute-400 uppercase tracking-wider;
+  }
+  .kc-ticker .value {
+    @apply font-mono font-bold text-xl text-gold-300 tabular-nums;
+  }
+
+  .nav-link {
+    @apply block w-full text-left px-2.5 py-2 rounded text-sm text-mute-400 hover:text-cream-100 hover:bg-pitch-700 transition-colors;
+  }
+  .nav-link.active {
+    @apply text-gold-300 bg-pitch-700;
+  }
+
+  .card {
+    @apply bg-pitch-800 border border-pitch-600 rounded-md p-5 mb-5;
+  }
+  .card h2 {
+    @apply text-sm mb-3.5 text-cream-100;
+  }
+
+  .stat-table {
+    @apply w-full border-collapse font-mono text-[13px];
+  }
+  .stat-table th, .stat-table td {
+    @apply text-left px-2.5 py-1.5 border-b border-pitch-700;
+  }
+  .stat-table th {
+    @apply font-body text-mute-400 font-medium uppercase text-[11px] tracking-wide;
+  }
+  .stat-table td.num {
+    @apply tabular-nums;
+  }
+
+  .btn-primary {
+    @apply bg-gold-500 text-pitch-900 border-none px-4.5 py-2.5 rounded font-semibold font-body cursor-pointer hover:bg-gold-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
+  }
+
+  .field {
+    @apply mb-3.5 flex flex-col gap-1.5;
+  }
+  .field label {
+    @apply text-xs text-mute-400 uppercase tracking-wide;
+  }
+
+  .field input, .field select {
+    @apply px-2.5 py-2 rounded text-sm;
+  }
+
+  .error-text {
+    @apply text-red-500 text-[13px] mt-2;
+  }
+
+  .role-toggle button {
+    @apply flex-1 bg-pitch-900 border border-pitch-600 text-mute-400 px-2 py-2 rounded cursor-pointer font-body;
+  }
+  .role-toggle button.active {
+    @apply border-gold-500 text-gold-300;
+  }
+}
