@@ -4,6 +4,8 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ClubDashboard from "./pages/ClubDashboard";
 import ManagerDashboard from "./pages/ManagerDashboard";
+import Fixtures from "./pages/Fixtures";
+import Standings from "./pages/Standings";
 
 function PrivateRoute({ children, role }) {
   const { user, loading } = useAuth();
@@ -25,11 +27,13 @@ export default function App() {
     <Router>
       <AuthProvider>
         <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/club" element={<PrivateRoute role="club_owner"><ClubDashboard /></PrivateRoute>} />
-          <Route path="/manager" element={<PrivateRoute role="manager"><ManagerDashboard /></PrivateRoute>} />
+          <Route path="/"          element={<Home />} />
+          <Route path="/login"     element={<Login />} />
+          <Route path="/register"  element={<Register />} />
+          <Route path="/club"      element={<PrivateRoute role="club_owner"><ClubDashboard /></PrivateRoute>} />
+          <Route path="/manager"   element={<PrivateRoute role="manager"><ManagerDashboard /></PrivateRoute>} />
+          <Route path="/fixtures"  element={<PrivateRoute><Fixtures /></PrivateRoute>} />
+          <Route path="/standings" element={<PrivateRoute><Standings /></PrivateRoute>} />
         </Routes>
       </AuthProvider>
     </Router>

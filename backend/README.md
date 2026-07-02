@@ -1,10 +1,10 @@
 # Maminho backend
 
-Django + DRF API. See `/maminho` repo root for the full project context.
+Django + DRF API. See repo root README for project overview.
 
 ## Local dev (Docker)
 
-```
+```bash
 cp backend/.env.example backend/.env   # edit values
 docker compose up --build
 docker compose exec backend python manage.py migrate
@@ -12,38 +12,47 @@ docker compose exec backend python manage.py createsuperuser
 docker compose exec backend python manage.py generate_players 200
 ```
 
-API will be at `http://localhost:8000/api/`, admin at `/admin/`.
+API: `http://localhost:8000/api/`  |  Admin: `/admin/`
 
-## Scheduled jobs
+## Scheduled jobs (cron on the droplet)
 
-Phase 1 ships one job that MUST run on a schedule for free-agent claiming
-and contract-expiry re-claiming to actually resolve. There's no Celery yet
-(deliberately, to keep Phase 1 simple) -- just cron calling a management
-command:
+```cron
+# Every 5 min — resolve expired free-agent bidding windows
+*/5 * * * * docker compose -f /root/maminho/docker-compose.yml exec -T backend python manage.py resolve_expired_bids >> /var/log/maminho/resolve_bids.log 2>&1
 
+# 1st of each month at 00:05 — pay wages (club→manager, manager→player)
+5 0 1 * * docker compose -f /root/maminho/docker-compose.yml exec -T backend python manage.py process_monthly_wages >> /var/log/maminho/wages.log 2>&1
+
+# 1st of each month at 00:10 — update player stats (after wages)
+10 0 1 * * docker compose -f /root/maminho/docker-compose.yml exec -T backend python manage.py update_monthly_stats >> /var/log/maminho/stats.log 2>&1
 ```
-# crontab -e  (on the droplet, inside or outside the container)
-*/5 * * * * docker compose -f /path/to/maminho/docker-compose.yml exec -T backend python manage.py resolve_expired_bids >> /var/log/maminho/resolve_bids.log 2>&1
-```
 
-Every 5 minutes is a reasonable starting interval -- it means a window can
-close up to 5 minutes "late" in the worst case, which is fine for a 24h
-window. Tighten it later if needed.
+Create the log dir first: `mkdir -p /var/log/maminho`
 
-## API overview (Phase 1)
+## Match simulation (Phase 2)
 
-| Endpoint | Method | Who | What |
+Fixtures are created by the admin via `/admin/` (Matches > Fixtures > Add fixture).  
+To simulate a fixture: go to Matches > Fixtures, select it, use the "Simulate selected fixtures" action.  
+Or via the API (admin token required): `POST /api/matches/<id>/simulate/`
+
+## API surface
+
+| Endpoint | Method | Auth | What |
 |---|---|---|---|
-| `/api/auth/register/` | POST | anyone | Create club_owner or manager account |
-| `/api/auth/login/` | POST | anyone | Get auth token |
-| `/api/auth/me/` | GET | authenticated | Current user info |
+| `/api/auth/register/` | POST | — | Create club_owner or manager account |
+| `/api/auth/login/` | POST | — | Get auth token |
+| `/api/auth/me/` | GET | any | Current user |
 | `/api/clubs/me/` | GET | club_owner | Own club + facilities + licenses |
-| `/api/clubs/facilities/build/` | POST | club_owner | Build a new facility |
-| `/api/clubs/facilities/<id>/upgrade/` | POST | club_owner | Upgrade a facility one level |
-| `/api/clubs/licenses/purchase/` | POST | club_owner | Buy a sport license |
-| `/api/players/free-agents/` | GET | authenticated | Browse free-agent pool |
+| `/api/clubs/facilities/build/` | POST | club_owner | Build facility (offseason only) |
+| `/api/clubs/facilities/<id>/upgrade/` | POST | club_owner | Upgrade facility (offseason only) |
+| `/api/clubs/licenses/purchase/` | POST | club_owner | Buy sport license |
+| `/api/clubs/season/` | GET | any | Current season status |
+| `/api/players/manager/me/` | GET | manager | Manager profile + KC balance |
+| `/api/players/free-agents/` | GET | any | Browse free agent pool |
 | `/api/players/mine/` | GET | manager | Own roster |
-| `/api/players/<id>/bid/` | POST | manager | Place/raise a bid (opens or joins a 24h window) |
-| `/api/players/club-deals/` | POST | manager | Record an agreed club-deal (loan player to a club) |
-
-Auth: `Authorization: Token <token>` header (DRF TokenAuthentication).
+| `/api/players/<id>/bid/` | POST | manager | Open/join a 24h bid window |
+| `/api/players/club-deals/` | POST | manager | Record an agreed club deal |
+| `/api/matches/` | GET | any | Fixture list (filter: `?season=<id>`) |
+| `/api/matches/<id>/` | GET | any | Fixture detail + event log |
+| `/api/matches/<id>/simulate/` | POST | admin | Run match simulation |
+| `/api/matches/standings/` | GET | any | League table (filter: `?season=<id>`) |

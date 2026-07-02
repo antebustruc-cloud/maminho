@@ -4,11 +4,6 @@ from django.db import models
 
 
 class Club(models.Model):
-    """
-    One club per club_owner user, for Phase 1. Holds its own KC balance --
-    facility builds/upgrades and license purchases spend from here.
-    """
-
     owner = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="club"
     )
@@ -27,32 +22,26 @@ class Club(models.Model):
 
 
 class Facility(models.Model):
-    """
-    Levels 1-10. Build/upgrade only allowed during offseason -- enforced in
-    the serializer/view layer, not here, so this model stays a plain record.
-    """
-
     class FacilityType(models.TextChoices):
-        SOCCER_FIELD = "soccer_field", "Soccer field"
-        SPORTS_HALL = "sports_hall", "Sports hall"
-        SWIMMING_POOL = "swimming_pool", "Swimming pool"
-        TENNIS_COURT = "tennis_court", "Tennis court"
-        GYM = "gym", "Gym"
+        SOCCER_FIELD   = "soccer_field",   "Soccer field"
+        SPORTS_HALL    = "sports_hall",    "Sports hall"
+        SWIMMING_POOL  = "swimming_pool",  "Swimming pool"
+        TENNIS_COURT   = "tennis_court",   "Tennis court"
+        GYM            = "gym",            "Gym"
         MEDICAL_CENTER = "medical_center", "Medical center"
 
-    # (build_cost, cost_per_level_upgrade)
     COSTS = {
-        FacilityType.SOCCER_FIELD: (200, 2000),
-        FacilityType.SPORTS_HALL: (3000, 200),
-        FacilityType.SWIMMING_POOL: (2000, 200),
-        FacilityType.TENNIS_COURT: (100, 200),
-        FacilityType.GYM: (1000, 300),
+        FacilityType.SOCCER_FIELD:   (200,  2000),
+        FacilityType.SPORTS_HALL:    (3000,  200),
+        FacilityType.SWIMMING_POOL:  (2000,  200),
+        FacilityType.TENNIS_COURT:   (100,   200),
+        FacilityType.GYM:            (1000,  300),
         FacilityType.MEDICAL_CENTER: (1000, 1000),
     }
 
-    club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name="facilities")
+    club          = models.ForeignKey(Club, on_delete=models.CASCADE, related_name="facilities")
     facility_type = models.CharField(max_length=20, choices=FacilityType.choices)
-    level = models.PositiveSmallIntegerField(default=1)
+    level         = models.PositiveSmallIntegerField(default=1)
 
     class Meta:
         unique_together = ("club", "facility_type")
@@ -61,43 +50,63 @@ class Facility(models.Model):
         if not (1 <= self.level <= 10):
             raise ValidationError("Facility level must be between 1 and 10.")
         if self.facility_type == self.FacilityType.MEDICAL_CENTER and self.level >= 5:
-            pool = self.club.facilities.filter(
-                facility_type=self.FacilityType.SWIMMING_POOL
-            ).first()
+            pool = self.club.facilities.filter(facility_type=self.FacilityType.SWIMMING_POOL).first()
             if not pool or pool.level < self.level - 1:
                 raise ValidationError(
-                    "Medical center levels 5-10 require a swimming pool at "
-                    "level >= (medical center level - 1)."
+                    "Medical center levels 5-10 require a swimming pool at level >= (medical_center_level - 1)."
                 )
 
     def upgrade_cost(self):
         _, per_level = self.COSTS[self.facility_type]
         return per_level
 
+    def stat_bonus_pct(self):
+        """Level 1 = +1%, level 10 = +10% for monthly player stat growth."""
+        return self.level
+
     def __str__(self):
-        return f"{self.club.name} - {self.get_facility_type_display()} (lvl {self.level})"
+        return f"{self.club.name} – {self.get_facility_type_display()} (lvl {self.level})"
 
 
 class SportLicense(models.Model):
-    """One license per club per sport. Phase 1 only issues 'football'."""
-
     class Sport(models.TextChoices):
         FOOTBALL = "football", "Football"
-        # Remaining 15 sports added in later phases.
 
-    LICENSE_COSTS = {
-        Sport.FOOTBALL: 700,
-    }
-    REQUIRED_FACILITY = {
-        Sport.FOOTBALL: Facility.FacilityType.SOCCER_FIELD,
-    }
+    LICENSE_COSTS = {Sport.FOOTBALL: 700}
+    REQUIRED_FACILITY = {Sport.FOOTBALL: Facility.FacilityType.SOCCER_FIELD}
 
-    club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name="sport_licenses")
-    sport = models.CharField(max_length=30, choices=Sport.choices)
+    club         = models.ForeignKey(Club, on_delete=models.CASCADE, related_name="sport_licenses")
+    sport        = models.CharField(max_length=30, choices=Sport.choices)
     purchased_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = ("club", "sport")
 
     def __str__(self):
-        return f"{self.club.name} - {self.get_sport_display()} license"
+        return f"{self.club.name} – {self.get_sport_display()} license"
+
+
+class Season(models.Model):
+    """
+    Controls the global game calendar. Only one season can be ACTIVE at a time.
+    Facility builds/upgrades are blocked while a season is active.
+    The admin creates seasons via the Django admin.
+    """
+    class Status(models.TextChoices):
+        UPCOMING = "upcoming", "Upcoming"
+        ACTIVE   = "active",   "Active"
+        FINISHED = "finished", "Finished"
+
+    name       = models.CharField(max_length=100)
+    sport      = models.CharField(max_length=30, choices=SportLicense.Sport.choices, default=SportLicense.Sport.FOOTBALL)
+    status     = models.CharField(max_length=10, choices=Status.choices, default=Status.UPCOMING)
+    start_date = models.DateField()
+    end_date   = models.DateField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.status})"
+
+    @classmethod
+    def is_offseason(cls, sport=SportLicense.Sport.FOOTBALL):
+        return not cls.objects.filter(sport=sport, status=cls.Status.ACTIVE).exists()

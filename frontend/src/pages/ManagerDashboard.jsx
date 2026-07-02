@@ -2,10 +2,15 @@ import { useEffect, useState } from "react";
 import Layout from "../components/Layout";
 import client from "../api/client";
 
+const NAV = [
+  { to: "/manager",   label: "Scout" },
+  { to: "/fixtures",  label: "Fixtures" },
+  { to: "/standings", label: "Table" },
+];
+
 function PlayerRow({ player, onBid, busy }) {
   const [wage, setWage] = useState(50);
   const [years, setYears] = useState(2);
-
   return (
     <tr>
       <td>{player.name}</td>
@@ -15,10 +20,9 @@ function PlayerRow({ player, onBid, busy }) {
       <td className="num">{player.dribbling}</td>
       <td>
         <div className="flex gap-1.5 items-center">
-          <input type="number" min={1} value={wage} onChange={(e) => setWage(e.target.value)}
-            className="w-16 text-xs py-1 px-1.5" />
+          <input type="number" min={1} value={wage} onChange={(e) => setWage(e.target.value)} className="w-16 text-xs py-1 px-1.5" />
           <select value={years} onChange={(e) => setYears(e.target.value)} className="text-xs py-1 px-1.5">
-            {[1, 2, 3, 4, 5].map((y) => <option key={y} value={y}>{y}y</option>)}
+            {[1,2,3,4,5].map((y) => <option key={y} value={y}>{y}y</option>)}
           </select>
           <button className="btn-primary text-xs py-1 px-2.5" disabled={busy} onClick={() => onBid(player.id, wage, years)}>
             Bid
@@ -58,14 +62,9 @@ export default function ManagerDashboard() {
   if (!profile) return null;
 
   return (
-    <Layout
-      kcBalance={profile.kc_balance}
-      navItems={[
-        { to: "/manager", label: "Scout free agents" },
-      ]}
-    >
-      <h1 className="text-2xl mb-1">Manager dashboard</h1>
-      <p className="text-mute-400 mb-8">{profile.username}</p>
+    <Layout kcBalance={profile.kc_balance} navItems={NAV}>
+      <h1 className="text-2xl mb-1">Manager</h1>
+      <p className="text-mute-400 mb-6">{profile.username}</p>
 
       {error && <p className="error-text mb-4">{error}</p>}
 
@@ -81,17 +80,11 @@ export default function ManagerDashboard() {
       {view === "scout" && (
         <div className="card">
           <h2>Free agent pool — football</h2>
-          <p className="text-xs text-mute-400 mb-3">
-            Bidding opens a 24h window. Highest offer when it closes wins the contract — outbid anytime before then.
-          </p>
+          <p className="text-xs text-mute-400 mb-3">Bidding opens a 24h window. Highest offer when it closes wins — outbid anytime before then.</p>
           <table className="stat-table">
-            <thead>
-              <tr><th>Name</th><th>Age</th><th>Fin</th><th>Pas</th><th>Dri</th><th>Bid (KC/mo, years)</th></tr>
-            </thead>
+            <thead><tr><th>Name</th><th>Age</th><th>Fin</th><th>Pas</th><th>Dri</th><th>Bid (KC/mo, years)</th></tr></thead>
             <tbody>
-              {freeAgents.map((p) => (
-                <PlayerRow key={p.id} player={p} onBid={placeBid} busy={busy} />
-              ))}
+              {freeAgents.map((p) => <PlayerRow key={p.id} player={p} onBid={placeBid} busy={busy} />)}
             </tbody>
           </table>
         </div>
