@@ -40,7 +40,7 @@ def _squad_rating(club, attr_list):
         for p in players
     ) / len(players)
 
-    facility = club.facilities.filter(facility_type="soccer_field").first()
+    facility = club.facilities.filter(facility_type="stadium").first()
     bonus_pct = facility.level if facility else 0
     return raw * (1 + bonus_pct / 100)
 

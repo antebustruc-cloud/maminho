@@ -174,6 +174,21 @@ class Contract(models.Model):
         return f"{self.player} under {self.manager} ({self.wage} KC/mo)"
 
 
+class AgeProcessingLog(models.Model):
+    """
+    Idempotency guard for the quarterly `age_players` command.
+    One row per processed real-world quarter (e.g. "Q3 2026") — the
+    unique constraint makes a double-run within the same quarter a no-op.
+    """
+
+    quarter = models.CharField(max_length=10, unique=True)
+    players_aged = models.PositiveIntegerField(default=0)
+    processed_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Aging run for {self.quarter} ({self.players_aged} players)"
+
+
 class ClubDeal(models.Model):
     """
     The negotiated agreement loaning a manager's player to a club. Both

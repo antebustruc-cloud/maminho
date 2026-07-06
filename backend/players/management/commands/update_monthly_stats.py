@@ -68,7 +68,7 @@ class Command(BaseCommand):
         for player in players:
             facility_bonus = 0
             if player.current_club:
-                facility = player.current_club.facilities.filter(facility_type="soccer_field").first()
+                facility = player.current_club.facilities.filter(facility_type="stadium").first()
                 facility_bonus = facility.level if facility else 0
 
             delta = _stat_delta(player.talent_type, player.age, facility_bonus)

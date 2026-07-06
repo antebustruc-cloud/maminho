@@ -25,17 +25,24 @@ def random_name():
 
 
 class Command(BaseCommand):
-    help = "Seeds the free-agent pool with generated football players."
+    help = "Seeds the free-agent pool with generated players for any sport."
 
     def add_arguments(self, parser):
         parser.add_argument(
             "count", type=int, nargs="?", default=200,
             help="How many players to generate (default: 200).",
         )
+        parser.add_argument(
+            "--sport", default=SportLicense.Sport.FOOTBALL,
+            choices=SportLicense.Sport.values,
+            help="Sport to generate players for (default: football). "
+                 "Attributes are generic for now; per-sport attribute models come later.",
+        )
 
     @transaction.atomic
     def handle(self, *args, **options):
         count = options["count"]
+        sport = options["sport"]
         stat_field_names = [
             "agility", "strength", "speed", "acceleration", "jump", "stamina",
             "injury_resistance", "flexibility", "aggression", "bravery",
@@ -59,7 +66,7 @@ class Command(BaseCommand):
             )[0]
             players.append(Player(
                 name=random_name(),
-                sport=SportLicense.Sport.FOOTBALL,
+                sport=sport,
                 age=Player.random_age(),
                 height_cm=random.randint(170, 200),
                 weight_kg=random.randint(65, 95),
@@ -70,4 +77,4 @@ class Command(BaseCommand):
             ))
 
         Player.objects.bulk_create(players)
-        self.stdout.write(self.style.SUCCESS(f"Generated {count} free-agent football players."))
+        self.stdout.write(self.style.SUCCESS(f"Generated {count} free-agent {sport} players."))

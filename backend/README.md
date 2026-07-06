@@ -25,6 +25,10 @@ API: `http://localhost:8000/api/`  |  Admin: `/admin/`
 
 # 1st of each month at 00:10 — update player stats (after wages)
 10 0 1 * * docker compose -f /root/maminho/docker-compose.yml exec -T backend python manage.py update_monthly_stats >> /var/log/maminho/stats.log 2>&1
+
+# Season rollover: 1st of Jan/Apr/Jul/Oct at 00:15 — age ALL players +1 year
+# (1 real quarter = 1 in-game year; idempotent per quarter)
+15 0 1 1,4,7,10 * docker compose -f /root/maminho/docker-compose.yml exec -T backend python manage.py age_players >> /var/log/maminho/aging.log 2>&1
 ```
 
 Create the log dir first: `mkdir -p /var/log/maminho`

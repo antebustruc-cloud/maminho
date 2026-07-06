@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import Layout from "../components/Layout";
 import client from "../api/client";
 
-const FACILITY_TYPES = ["soccer_field","sports_hall","swimming_pool","tennis_court","gym","medical_center"];
+const FACILITY_TYPES = ["stadium","sports_hall","swimming_pool","tennis_court","fight_gym","gym","medical_center"];
 
 const NAV = [
   { to: "/club",      label: "Club" },
