@@ -2,6 +2,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from . import facility_config
+
 
 class Club(models.Model):
     owner = models.OneToOneField(
@@ -46,22 +48,44 @@ class Facility(models.Model):
     facility_type = models.CharField(max_length=20, choices=FacilityType.choices)
     level         = models.PositiveSmallIntegerField(default=1)
 
+    MAX_LEVEL = facility_config.MAX_LEVEL  # 7
+
     class Meta:
         unique_together = ("club", "facility_type")
 
     def clean(self):
-        if not (1 <= self.level <= 10):
-            raise ValidationError("Facility level must be between 1 and 10.")
+        # Level 0 = created but never completed initial construction.
+        if not (0 <= self.level <= self.MAX_LEVEL):
+            raise ValidationError(f"Facility level must be between 0 and {self.MAX_LEVEL}.")
         if self.facility_type == self.FacilityType.MEDICAL_CENTER and self.level >= 5:
             pool = self.club.facilities.filter(facility_type=self.FacilityType.SWIMMING_POOL).first()
             if not pool or pool.level < self.level - 1:
                 raise ValidationError(
-                    "Medical center levels 5-10 require a swimming pool at level >= (medical_center_level - 1)."
+                    f"Medical center levels 5-{self.MAX_LEVEL} require a swimming pool "
+                    "at level >= (medical_center_level - 1)."
                 )
 
+    def active_project(self):
+        """The facility's pending/in-progress ConstructionProject, or None."""
+        return self.construction_projects.filter(
+            status__in=(ConstructionProject.Status.PENDING,
+                        ConstructionProject.Status.IN_PROGRESS)
+        ).first()
+
+    @property
+    def is_usable(self):
+        """Built (level > 0) and not torn up by an active MAJOR project."""
+        if self.level < 1:
+            return False
+        return not self.construction_projects.filter(
+            status__in=(ConstructionProject.Status.PENDING,
+                        ConstructionProject.Status.IN_PROGRESS),
+            is_major=True,
+        ).exists()
+
     def upgrade_cost(self):
-        _, per_level = self.COSTS[self.facility_type]
-        return per_level
+        """KC cost of the next level, from the level config."""
+        return facility_config.level_config(self.facility_type, self.level + 1)["upgrade_cost_kc"]
 
     def stat_bonus_pct(self):
         """Level 1 = +1%, level 10 = +10% for monthly player stat growth."""
@@ -251,3 +275,71 @@ class Season(models.Model):
         last_day = calendar.monthrange(date.year, last_month)[1]
         return (date_cls(date.year, first_month, 1),
                 date_cls(date.year, last_month, last_day))
+
+
+class ConstructionProject(models.Model):
+    """
+    A build (from_level 0 → 1) or upgrade (L → L+1) of one facility.
+    KC is deducted from the club at project start via the Transaction ledger;
+    all config values are SNAPSHOTTED here so later tuning of the level
+    config never rewrites history. required_workers / required_guards are
+    recorded only — companies, workers, and hiring are a later phase.
+    Completion is applied by the `complete_construction` command (cron).
+    """
+
+    class Status(models.TextChoices):
+        PENDING     = "pending",     "Pending"
+        IN_PROGRESS = "in_progress", "In progress"
+        COMPLETED   = "completed",   "Completed"
+
+    facility   = models.ForeignKey(Facility, on_delete=models.CASCADE,
+                                   related_name="construction_projects")
+    from_level = models.PositiveSmallIntegerField()
+    to_level   = models.PositiveSmallIntegerField()
+    status     = models.CharField(max_length=12, choices=Status.choices,
+                                  default=Status.IN_PROGRESS)
+    started_at = models.DateTimeField()
+    ends_at    = models.DateTimeField()  # started_at + build_time_days
+
+    # --- snapshots of the level config at start time ---
+    cost_kc          = models.PositiveIntegerField()
+    required_workers = models.PositiveIntegerField()
+    required_guards  = models.PositiveIntegerField()
+    is_major         = models.BooleanField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["facility"],
+                condition=models.Q(status__in=("pending", "in_progress")),
+                name="one_active_project_per_facility",
+            ),
+        ]
+
+    def __str__(self):
+        return (f"{self.facility} construction L{self.from_level}→L{self.to_level} "
+                f"({self.status})")
+
+
+class SeasonRegistration(models.Model):
+    """
+    A club's entry into one season of one sport. Created before the season
+    starts (only while the season is not ACTIVE) and requires a valid sport
+    license plus a usable mapped facility. Clubs without a registration are
+    excluded from that season's fixtures and standings.
+    """
+
+    club          = models.ForeignKey(Club, on_delete=models.CASCADE,
+                                      related_name="season_registrations")
+    season        = models.ForeignKey(Season, on_delete=models.CASCADE,
+                                      related_name="registrations")
+    sport         = models.CharField(max_length=30, choices=SportLicense.Sport.choices)
+    registered_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("club", "season")
+
+    def __str__(self):
+        return f"{self.club.name} registered for {self.season.name} ({self.sport})"

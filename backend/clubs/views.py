@@ -6,8 +6,15 @@ from rest_framework.views import APIView
 from accounts.models import User
 from economy.models import InsufficientFundsError, Transaction, move_kc
 
-from .models import Club, Facility, Season, SportLicense
-from .serializers import ClubSerializer, SeasonSerializer
+from . import facility_config
+from .models import Club, ConstructionProject, Facility, Season, SeasonRegistration, SportLicense
+from .serializers import (
+    ClubSerializer,
+    ConstructionProjectSerializer,
+    SeasonRegistrationSerializer,
+    SeasonSerializer,
+)
+from .services import register_for_season, start_construction
 
 
 class IsClubOwner(permissions.BasePermission):
@@ -23,56 +30,86 @@ class MyClubView(generics.RetrieveAPIView):
         return self.request.user.club
 
 
-class BuildFacilityView(APIView):
+class StartConstructionView(APIView):
+    """
+    POST {facility_type} — start a construction project (Phase 3b).
+    No facility of that type yet → builds it (project L0→L1).
+    Facility exists → upgrade project to the next level (max 7).
+    KC is deducted at start; completion is applied by the
+    complete_construction cron. Owner-only.
+    """
     permission_classes = [IsClubOwner]
 
     def post(self, request):
-        club = request.user.club
-        facility_type = request.data.get("facility_type")
-        if facility_type not in Facility.FacilityType.values:
-            raise ValidationError("Unknown facility_type.")
-        if not Season.is_offseason():
-            raise ValidationError("Cannot build facilities during an active season.")
-        if club.facilities.filter(facility_type=facility_type).exists():
-            raise ValidationError("Club already has this facility.")
-
-        build_cost, _ = Facility.COSTS[facility_type]
-        try:
-            move_kc(from_holder=club, to_holder=None, amount=build_cost,
-                     kind=Transaction.Kind.FACILITY_BUILD,
-                     description=f"Built {facility_type}")
-        except InsufficientFundsError as exc:
-            raise ValidationError(str(exc))
-
-        facility = Facility.objects.create(club=club, facility_type=facility_type, level=1)
-        return Response({"id": facility.id, "facility_type": facility_type, "level": 1},
+        project = start_construction(request.user.club, request.data.get("facility_type"))
+        return Response(ConstructionProjectSerializer(project).data,
                         status=status.HTTP_201_CREATED)
 
 
+class BuildFacilityView(StartConstructionView):
+    """Legacy endpoint — now starts a construction project (kept so existing
+    frontend keeps working)."""
+
+
 class UpgradeFacilityView(APIView):
+    """Legacy endpoint — now starts an upgrade construction project."""
     permission_classes = [IsClubOwner]
 
     def post(self, request, facility_id):
-        if not Season.is_offseason():
-            raise ValidationError("Cannot upgrade facilities during an active season.")
         facility = Facility.objects.filter(id=facility_id, club=request.user.club).first()
         if not facility:
             raise PermissionDenied("Not your facility.")
-        if facility.level >= 10:
-            raise ValidationError("Facility already at max level (10).")
+        project = start_construction(request.user.club, facility.facility_type)
+        return Response(ConstructionProjectSerializer(project).data,
+                        status=status.HTTP_201_CREATED)
 
-        cost = facility.upgrade_cost()
-        try:
-            move_kc(from_holder=facility.club, to_holder=None, amount=cost,
-                     kind=Transaction.Kind.FACILITY_UPGRADE,
-                     description=f"Upgraded {facility.facility_type} to level {facility.level + 1}")
-        except InsufficientFundsError as exc:
-            raise ValidationError(str(exc))
 
-        facility.level += 1
-        facility.full_clean()
-        facility.save(update_fields=["level"])
-        return Response({"id": facility.id, "level": facility.level})
+class FacilityLevelConfigView(APIView):
+    """Read-only listing of the per-type, per-level construction config."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response({
+            "max_level": facility_config.MAX_LEVEL,
+            "levels": facility_config.LEVEL_CONFIG,
+        })
+
+
+class MyConstructionProjectsView(generics.ListAPIView):
+    """Status of the owner's club construction projects (active first)."""
+    permission_classes = [IsClubOwner]
+    serializer_class   = ConstructionProjectSerializer
+
+    def get_queryset(self):
+        return (ConstructionProject.objects
+                .filter(facility__club=self.request.user.club)
+                .select_related("facility")
+                .order_by("status", "-created_at"))
+
+
+class RegisterForSeasonView(APIView):
+    """POST — register the owner's club for a season (owner-only for now)."""
+    permission_classes = [IsClubOwner]
+
+    def post(self, request, season_id):
+        season = Season.objects.filter(id=season_id).first()
+        if not season:
+            raise ValidationError("Unknown season.")
+        registration = register_for_season(request.user.club, season)
+        return Response(SeasonRegistrationSerializer(registration).data,
+                        status=status.HTTP_201_CREATED)
+
+
+class SeasonRegistrationsView(generics.ListAPIView):
+    """Public list of clubs registered for a season."""
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = SeasonRegistrationSerializer
+
+    def get_queryset(self):
+        return (SeasonRegistration.objects
+                .filter(season_id=self.kwargs["season_id"])
+                .select_related("club")
+                .order_by("registered_at"))
 
 
 class PurchaseSportLicenseView(APIView):

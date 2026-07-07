@@ -14,6 +14,7 @@ class Transaction(models.Model):
     class Kind(models.TextChoices):
         FACILITY_BUILD = "facility_build", "Facility build"
         FACILITY_UPGRADE = "facility_upgrade", "Facility upgrade"
+        CONSTRUCTION = "construction", "Facility construction project"
         SPORT_LICENSE = "sport_license", "Sport license purchase"
         BID_WON = "bid_won", "Free agent bid won"
         WAGE_PAYMENT = "wage_payment", "Manager pays player wage"
