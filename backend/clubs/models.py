@@ -12,7 +12,7 @@ class Club(models.Model):
     name = models.CharField(max_length=100, unique=True)
     country = models.CharField(max_length=100)
     city = models.CharField(max_length=100)
-    kc_balance = models.PositiveIntegerField(default=5000)
+    kc_balance = models.PositiveIntegerField(default=500000)  # integer LC (= 5000 KC)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def clean(self):
@@ -33,15 +33,16 @@ class Facility(models.Model):
         GYM            = "gym",            "Gym"
         MEDICAL_CENTER = "medical_center", "Medical center"
 
-    # (build_cost, upgrade_cost_per_level) in KC — placeholder values, to be tuned.
+    # (build_cost, upgrade_cost_per_level) as integer LC — legacy reference
+    # values superseded by facility_config; placeholder, to be tuned.
     COSTS = {
-        FacilityType.STADIUM:        (200,  2000),
-        FacilityType.SPORTS_HALL:    (3000,  200),
-        FacilityType.SWIMMING_POOL:  (2000,  200),
-        FacilityType.TENNIS_COURT:   (100,   200),
-        FacilityType.FIGHT_GYM:      (900,   250),
-        FacilityType.GYM:            (1000,  300),
-        FacilityType.MEDICAL_CENTER: (1000, 1000),
+        FacilityType.STADIUM:        (20000,  200000),
+        FacilityType.SPORTS_HALL:    (300000,  20000),
+        FacilityType.SWIMMING_POOL:  (200000,  20000),
+        FacilityType.TENNIS_COURT:   (10000,   20000),
+        FacilityType.FIGHT_GYM:      (90000,   25000),
+        FacilityType.GYM:            (100000,  30000),
+        FacilityType.MEDICAL_CENTER: (100000, 100000),
     }
 
     club          = models.ForeignKey(Club, on_delete=models.CASCADE, related_name="facilities")
@@ -179,30 +180,30 @@ class SportLicense(models.Model):
         Sport.CROSSFIT:      Facility.FacilityType.GYM,
     }
 
-    # KC cost per license — placeholder values on football's 700 scale, to be tuned.
+    # License cost as integer LC — placeholder values (football = 70000 LC = 700 KC).
     LICENSE_COSTS = {
-        Sport.FOOTBALL:      700,
-        Sport.FUTSAL:        400,
-        Sport.HANDBALL:      450,
-        Sport.BASKETBALL:    600,
-        Sport.VOLLEYBALL:    450,
-        Sport.WATER_POLO:    500,
-        Sport.MARATHON:      250,
-        Sport.SPRINT_100M:   250,
-        Sport.SPRINT_400M:   250,
-        Sport.SWIMMING:      300,
-        Sport.TENNIS:        400,
-        Sport.TABLE_TENNIS:  250,
-        Sport.MMA:           400,
-        Sport.BOXING:        400,
-        Sport.KICKBOXING:    350,
-        Sport.WRESTLING:     300,
-        Sport.BJJ:           300,
-        Sport.JUDO:          300,
-        Sport.POWERLIFTING:  250,
-        Sport.WEIGHTLIFTING: 250,
-        Sport.BODYBUILDING:  250,
-        Sport.CROSSFIT:      300,
+        Sport.FOOTBALL:      70000,
+        Sport.FUTSAL:        40000,
+        Sport.HANDBALL:      45000,
+        Sport.BASKETBALL:    60000,
+        Sport.VOLLEYBALL:    45000,
+        Sport.WATER_POLO:    50000,
+        Sport.MARATHON:      25000,
+        Sport.SPRINT_100M:   25000,
+        Sport.SPRINT_400M:   25000,
+        Sport.SWIMMING:      30000,
+        Sport.TENNIS:        40000,
+        Sport.TABLE_TENNIS:  25000,
+        Sport.MMA:           40000,
+        Sport.BOXING:        40000,
+        Sport.KICKBOXING:    35000,
+        Sport.WRESTLING:     30000,
+        Sport.BJJ:           30000,
+        Sport.JUDO:          30000,
+        Sport.POWERLIFTING:  25000,
+        Sport.WEIGHTLIFTING: 25000,
+        Sport.BODYBUILDING:  25000,
+        Sport.CROSSFIT:      30000,
     }
 
     @classmethod
@@ -227,10 +228,10 @@ class Season(models.Model):
     ACTIVE at a time. Facility builds/upgrades are blocked while a season
     is active. The admin creates seasons via the Django admin.
 
-    GAME TIME: 1 real-world calendar quarter = 1 in-game year. Seasons are
-    named after the real quarter they run in ("Q1 2026", "Q2 2026", ...).
-    Player ages are plain integers incremented once per quarter at season
-    rollover (see the `age_players` management command) — they are NOT
+    GAME TIME (Phase 3c): 1 real year = 3 seasons of ~4 months each, named
+    "S1 2026" (Jan-Apr), "S2 2026" (May-Aug), "S3 2026" (Sep-Dec). Player
+    ages are plain integers incremented once per season at rollover (see
+    the `age_players` management command) — +3 per real year. They are NOT
     derived from real dates.
     """
     class Status(models.TextChoices):
@@ -252,26 +253,27 @@ class Season(models.Model):
     def is_offseason(cls, sport=SportLicense.Sport.FOOTBALL):
         return not cls.objects.filter(sport=sport, status=cls.Status.ACTIVE).exists()
 
-    # --- quarterly game-year helpers ---
+    # --- game-year helpers: 3 seasons per real year (Phase 3c) ---
 
     @staticmethod
-    def quarter_name(date):
-        """Canonical season name for a real date, e.g. 'Q3 2026'."""
-        quarter = (date.month - 1) // 3 + 1
-        return f"Q{quarter} {date.year}"
+    def period_name(date):
+        """Canonical season name for a real date, e.g. 'S2 2026'.
+        S1 = Jan-Apr, S2 = May-Aug, S3 = Sep-Dec."""
+        period = (date.month - 1) // 4 + 1
+        return f"S{period} {date.year}"
 
     @classmethod
-    def current_quarter_name(cls):
+    def current_period_name(cls):
         from django.utils import timezone
-        return cls.quarter_name(timezone.localdate())
+        return cls.period_name(timezone.localdate())
 
     @staticmethod
-    def quarter_bounds(date):
-        """(start_date, end_date) of the real quarter containing `date`."""
+    def period_bounds(date):
+        """(start_date, end_date) of the 4-month season period containing `date`."""
         import calendar
         from datetime import date as date_cls
-        first_month = ((date.month - 1) // 3) * 3 + 1
-        last_month = first_month + 2
+        first_month = ((date.month - 1) // 4) * 4 + 1
+        last_month = first_month + 3
         last_day = calendar.monthrange(date.year, last_month)[1]
         return (date_cls(date.year, first_month, 1),
                 date_cls(date.year, last_month, last_day))
@@ -302,10 +304,24 @@ class ConstructionProject(models.Model):
     ends_at    = models.DateTimeField()  # started_at + build_time_days
 
     # --- snapshots of the level config at start time ---
-    cost_kc          = models.PositiveIntegerField()
+    cost_kc          = models.PositiveIntegerField()  # config reference cost, integer LC
     required_workers = models.PositiveIntegerField()
     required_guards  = models.PositiveIntegerField()
     is_major         = models.BooleanField()
+
+    # --- company contracts (Phase 3c) ---
+    # Nullable at the DB level so pre-3c rows stay valid; REQUIRED for all
+    # new projects (enforced in services.start_construction). Prices are the
+    # freely agreed amounts (integer LC) paid by the client at start — no
+    # enforced pricing.
+    construction_company  = models.ForeignKey(
+        "companies.Company", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="construction_contracts")
+    security_company      = models.ForeignKey(
+        "companies.Company", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="security_contracts")
+    construction_price_lc = models.PositiveIntegerField(default=0)
+    security_price_lc     = models.PositiveIntegerField(default=0)
 
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -30,6 +30,19 @@ class MyClubView(generics.RetrieveAPIView):
         return self.request.user.club
 
 
+def _construction_params(request):
+    """Resolve company contract params from the request body (Phase 3c)."""
+    from companies.models import Company
+    return {
+        "construction_company": Company.objects.filter(
+            id=request.data.get("construction_company")).first(),
+        "security_company": Company.objects.filter(
+            id=request.data.get("security_company")).first(),
+        "construction_price_lc": request.data.get("construction_price_lc"),
+        "security_price_lc": request.data.get("security_price_lc"),
+    }
+
+
 class StartConstructionView(APIView):
     """
     POST {facility_type} — start a construction project (Phase 3b).
@@ -41,7 +54,9 @@ class StartConstructionView(APIView):
     permission_classes = [IsClubOwner]
 
     def post(self, request):
-        project = start_construction(request.user.club, request.data.get("facility_type"))
+        project = start_construction(
+            request.user.club, request.data.get("facility_type"),
+            **_construction_params(request))
         return Response(ConstructionProjectSerializer(project).data,
                         status=status.HTTP_201_CREATED)
 
@@ -59,7 +74,9 @@ class UpgradeFacilityView(APIView):
         facility = Facility.objects.filter(id=facility_id, club=request.user.club).first()
         if not facility:
             raise PermissionDenied("Not your facility.")
-        project = start_construction(request.user.club, facility.facility_type)
+        project = start_construction(
+            request.user.club, facility.facility_type,
+            **_construction_params(request))
         return Response(ConstructionProjectSerializer(project).data,
                         status=status.HTTP_201_CREATED)
 

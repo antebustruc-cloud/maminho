@@ -1,14 +1,14 @@
 """
-Runs once per real-world quarter at season rollover (cron). One real
-quarter = one in-game year, so EVERY player in the game — all sports,
-team and individual alike — gets age +1.
+Runs once per season at rollover (cron). Phase 3c: 1 real year = 3
+seasons (~4 months each), so EVERY player in the game — all sports, team
+and individual alike — gets age +1 per season (+3 per real year).
 
-Idempotent per quarter: the AgeProcessingLog unique constraint guarantees
-that a double-run within the same quarter does nothing. Use --force only
-to deliberately re-run after deleting the log row via the admin.
+Idempotent per season period: the AgeProcessingLog unique constraint
+guarantees that a double-run within the same period does nothing. To
+deliberately re-run, delete the log row via the admin first.
 
-Suggested cron (1st day of Jan/Apr/Jul/Oct at 00:15, after wages/stats):
-  15 0 1 1,4,7,10 * docker compose -f /root/maminho/docker-compose.yml \
+Suggested cron (1st day of Jan/May/Sep at 00:15, after wages/stats):
+  15 0 1 1,5,9 * docker compose -f /root/maminho/docker-compose.yml \
       exec -T backend python manage.py age_players >> /var/log/maminho/aging.log 2>&1
 """
 
@@ -21,37 +21,37 @@ from players.models import AgeProcessingLog, Player
 
 
 class Command(BaseCommand):
-    help = "Ages ALL players by +1 year (runs once per real quarter; idempotent)."
+    help = "Ages ALL players by +1 year (runs once per season; idempotent)."
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--quarter",
-            help='Override the quarter label (e.g. "Q3 2026"). Defaults to the current real quarter.',
+            "--period",
+            help='Override the season period label (e.g. "S2 2026"). Defaults to the current period.',
         )
 
     def handle(self, *args, **options):
-        quarter = options.get("quarter") or Season.current_quarter_name()
+        period = options.get("period") or Season.current_period_name()
 
-        if AgeProcessingLog.objects.filter(quarter=quarter).exists():
+        if AgeProcessingLog.objects.filter(period=period).exists():
             self.stdout.write(self.style.WARNING(
-                f"Players were already aged for {quarter} — skipping (idempotency guard)."
+                f"Players were already aged for {period} — skipping (idempotency guard)."
             ))
             return
 
         try:
             with transaction.atomic():
-                # Claim the quarter first; the unique constraint rejects a
+                # Claim the period first; the unique constraint rejects a
                 # concurrent second run before any ages are touched.
-                log = AgeProcessingLog.objects.create(quarter=quarter)
+                log = AgeProcessingLog.objects.create(period=period)
                 aged = Player.objects.update(age=F("age") + 1)
                 log.players_aged = aged
                 log.save(update_fields=["players_aged"])
         except IntegrityError:
             self.stdout.write(self.style.WARNING(
-                f"Another run already claimed {quarter} — skipping."
+                f"Another run already claimed {period} — skipping."
             ))
             return
 
         self.stdout.write(self.style.SUCCESS(
-            f"Aged {aged} players by +1 year for {quarter}."
+            f"Aged {aged} players by +1 year for {period}."
         ))

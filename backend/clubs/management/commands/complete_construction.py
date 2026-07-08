@@ -35,6 +35,8 @@ class Command(BaseCommand):
                 facility = project.facility
                 facility.level = project.to_level
                 facility.save(update_fields=["level"])
+                # Free the assigned crews (Phase 3c).
+                project.assigned_employees.update(current_project=None)
                 completed += 1
                 self.stdout.write(
                     f"Completed: {facility.club.name} {facility.facility_type} "

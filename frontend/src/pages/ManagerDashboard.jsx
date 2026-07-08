@@ -52,7 +52,7 @@ export default function ManagerDashboard() {
   async function placeBid(playerId, wage, years) {
     setError(""); setBusy(true);
     try {
-      await client.post(`/players/${playerId}/bid/`, { wage_offer: wage, contract_length_years: years });
+      await client.post(`/players/${playerId}/bid/`, { wage_offer: Math.round(wage * 100), contract_length_years: years });
       loadAll();
     } catch (err) {
       setError(err.response?.data?.[0] || "Bid failed.");

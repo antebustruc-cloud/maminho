@@ -12,7 +12,7 @@ export default function Layout({ kcBalance, navItems, children }) {
         {kcBalance !== undefined && (
           <div className="kc-ticker">
             <div className="label">KunaCoins</div>
-            <div className="value">{kcBalance.toLocaleString()} KC</div>
+            <div className="value">{(kcBalance / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KC</div>
           </div>
         )}
 

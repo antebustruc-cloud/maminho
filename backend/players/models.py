@@ -20,7 +20,7 @@ class ManagerProfile(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="manager_profile"
     )
-    kc_balance = models.PositiveIntegerField(default=1000)
+    kc_balance = models.PositiveIntegerField(default=100000)  # integer LC (= 1000 KC)
 
     def clean(self):
         if self.user_id and self.user.role != self.user.Role.MANAGER:
@@ -156,7 +156,7 @@ class Bid(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.manager} -> {self.player} ({self.wage_offer} KC/mo, {self.status})"
+        return f"{self.manager} -> {self.player} ({self.wage_offer} LC/mo, {self.status})"
 
 
 class Contract(models.Model):
@@ -171,22 +171,23 @@ class Contract(models.Model):
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return f"{self.player} under {self.manager} ({self.wage} KC/mo)"
+        return f"{self.player} under {self.manager} ({self.wage} LC/mo)"
 
 
 class AgeProcessingLog(models.Model):
     """
-    Idempotency guard for the quarterly `age_players` command.
-    One row per processed real-world quarter (e.g. "Q3 2026") — the
-    unique constraint makes a double-run within the same quarter a no-op.
+    Idempotency guard for the per-season `age_players` command (Phase 3c:
+    3 seasons per real year). One row per processed season period
+    (e.g. "S2 2026") — the unique constraint makes a double-run within
+    the same period a no-op.
     """
 
-    quarter = models.CharField(max_length=10, unique=True)
+    period = models.CharField(max_length=10, unique=True)
     players_aged = models.PositiveIntegerField(default=0)
     processed_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Aging run for {self.quarter} ({self.players_aged} players)"
+        return f"Aging run for {self.period} ({self.players_aged} players)"
 
 
 class ClubDeal(models.Model):

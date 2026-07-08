@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from economy.models import lc_display
+
 from .models import Bid, ClubDeal, Contract, ManagerProfile, Player
 
 # Hidden mental attributes + talent_type are intentionally left off the
@@ -36,13 +38,23 @@ class ManagerProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ManagerProfile
-        fields = ["id", "username", "kc_balance"]
+        fields = ["id", "username", "kc_balance", "kc_balance_display"]
+
+    kc_balance_display = serializers.SerializerMethodField()
+
+    def get_kc_balance_display(self, obj):
+        return lc_display(obj.kc_balance)
 
 
 class BidSerializer(serializers.ModelSerializer):
     class Meta:
         model = Bid
-        fields = ["id", "player", "wage_offer", "contract_length_years", "status", "created_at", "expires_at"]
+        fields = ["id", "player", "wage_offer", "wage_offer_display", "contract_length_years", "status", "created_at", "expires_at"]
+
+    wage_offer_display = serializers.SerializerMethodField()
+
+    def get_wage_offer_display(self, obj):
+        return lc_display(obj.wage_offer)
         read_only_fields = ["status", "created_at", "expires_at"]
 
 

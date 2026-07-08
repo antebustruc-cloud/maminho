@@ -1,5 +1,12 @@
 # Maminho backend
 
+
+## Currency (Phase 3c)
+1 KunaCoin (KC) = 100 LipaCoin (LC). **All monetary amounts are stored and
+exchanged over the API as integer LC** (like cents). Legacy field names such
+as `kc_balance` remain, but their values are LC. Serializers include
+`*_display` strings ("4.50 KC") for humans. Seasons run 3 per real year:
+S1 (Jan-Apr), S2 (May-Aug), S3 (Sep-Dec); players age +1 per season.
 Django + DRF API. See repo root README for project overview.
 
 ## Local dev (Docker)
@@ -26,9 +33,12 @@ API: `http://localhost:8000/api/`  |  Admin: `/admin/`
 # 1st of each month at 00:10 — update player stats (after wages)
 10 0 1 * * docker compose -f /root/maminho/docker-compose.yml exec -T backend python manage.py update_monthly_stats >> /var/log/maminho/stats.log 2>&1
 
-# Season rollover: 1st of Jan/Apr/Jul/Oct at 00:15 — age ALL players +1 year
-# (1 real quarter = 1 in-game year; idempotent per quarter)
-15 0 1 1,4,7,10 * docker compose -f /root/maminho/docker-compose.yml exec -T backend python manage.py age_players >> /var/log/maminho/aging.log 2>&1
+# Season rollover: 1st of Jan/May/Sep at 00:15 — age ALL players +1 year
+# (3 seasons per real year; idempotent per season period)
+15 0 1 1,5,9 * docker compose -f /root/maminho/docker-compose.yml exec -T backend python manage.py age_players >> /var/log/maminho/aging.log 2>&1
+
+# 1st of each month at 00:20 — NPC workforce payroll (after player wages)
+20 0 1 * * docker compose -f /root/maminho/docker-compose.yml exec -T backend python manage.py process_npc_wages >> /var/log/maminho/npc_wages.log 2>&1
 
 # Every 10 minutes — complete ended construction projects (Phase 3b)
 */10 * * * * docker compose -f /root/maminho/docker-compose.yml exec -T backend python manage.py complete_construction >> /var/log/maminho/construction.log 2>&1
@@ -52,11 +62,23 @@ Or via the API (admin token required): `POST /api/matches/<id>/simulate/`
 | `/api/clubs/me/` | GET | club_owner | Own club + facilities + licenses |
 | `/api/clubs/facilities/build/` | POST | club_owner | Start construction project (build L1) |
 | `/api/clubs/facilities/<id>/upgrade/` | POST | club_owner | Start construction project (upgrade) |
-| `/api/clubs/facilities/construction/start/` | POST | club_owner | Start construction (build or upgrade) |
+| `/api/clubs/facilities/construction/start/` | POST | club_owner | Start construction — requires construction_company, security_company, construction_price_lc, security_price_lc |
 | `/api/clubs/facilities/construction/` | GET | club_owner | Own construction projects |
 | `/api/clubs/facilities/level-config/` | GET | any | Facility level config (costs, capacity, timings) |
 | `/api/clubs/seasons/<id>/register/` | POST | club_owner | Register club for a season |
 | `/api/clubs/seasons/<id>/registrations/` | GET | any | Clubs registered for a season |
+| `/api/companies/found/` | POST | manager | Found a company (pays fee, becomes CEO) |
+| `/api/companies/founding-fees/` | GET | any | Founding fee per company type |
+| `/api/companies/` | GET | any | List companies (?company_type=) |
+| `/api/companies/<id>/` | GET | any | Company detail with holdings |
+| `/api/companies/mine/` | GET | any | My company (as CEO) with employees |
+| `/api/companies/<id>/hire/` | POST | CEO | Hire N NPC workers instantly |
+| `/api/companies/<id>/employees/<id>/fire/` | POST | CEO | Fire employee (after 1 month) |
+| `/api/companies/<id>/dividend/` | POST | CEO | Split payout among holders by percent |
+| `/api/companies/<id>/share-offers/` | POST | holder | Offer shares to another user |
+| `/api/companies/share-offers/mine/` | GET | any | My share offers (made/received) |
+| `/api/companies/share-offers/<id>/accept/` | POST | recipient | Accept share offer |
+| `/api/companies/share-offers/<id>/decline/` | POST | either party | Decline/cancel offer |
 | `/api/clubs/licenses/purchase/` | POST | club_owner | Buy sport license |
 | `/api/clubs/season/` | GET | any | Current season status |
 | `/api/players/manager/me/` | GET | manager | Manager profile + KC balance |
