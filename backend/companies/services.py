@@ -49,6 +49,11 @@ def found_company(user, name, company_type):
         raise ValidationError("You are already CEO of a company (max one).")
     if Company.objects.filter(name=name).exists():
         raise ValidationError("Company name already taken.")
+    from maminho import limits
+    if Company.objects.filter(company_type=company_type).count() >= limits.MAX_COMPANIES_PER_TYPE:
+        raise ValidationError(
+            f"The {company_type} sector is full "
+            f"(max {limits.MAX_COMPANIES_PER_TYPE} companies per type).")
 
     fee = FOUNDING_FEES_LC[company_type]
     wallet = balance_holder_for(user)
@@ -185,6 +190,8 @@ def fire_employee(company, ceo, employee_id):
         raise ValidationError("Employees can only be fired after 1 full month of employment.")
     if employee.current_project_id:
         raise ValidationError("Employee is assigned to an active construction project.")
+    if employee.current_contract_id:
+        raise ValidationError("Employee is assigned to an active staffing contract.")
 
     employee.fired_at = timezone.now()
     employee.save(update_fields=["fired_at"])

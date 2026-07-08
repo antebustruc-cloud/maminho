@@ -5,23 +5,9 @@ from django.db import transaction
 
 from clubs.models import SportLicense
 from players.models import Player
+from players.namegen import DEFAULT_COUNTRY, generate_name, supported_countries
 
-FIRST_NAMES = [
-    "Luka", "Ivan", "Marko", "Ante", "Filip", "Josip", "Petar", "Domagoj",
-    "Mateo", "Niko", "Karlo", "Borna", "Dario", "Tomislav", "Vedran",
-]
-LAST_NAMES = [
-    "Horvat", "Kovacic", "Babic", "Maric", "Jurisic", "Novak", "Tomic",
-    "Kralj", "Vukovic", "Matic", "Pavlic", "Simic", "Knezevic", "Barisic",
-]
-COUNTRIES = [
-    "Croatia", "Germany", "Brazil", "Argentina", "Netherlands", "France",
-    "Spain", "Italy", "Serbia", "Japan", "USA", "England",
-]
-
-
-def random_name():
-    return f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}"
+COUNTRY_DISPLAY = {"HR": "Croatia"}
 
 
 class Command(BaseCommand):
@@ -34,15 +20,21 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--sport", default=SportLicense.Sport.FOOTBALL,
-            choices=SportLicense.Sport.values,
-            help="Sport to generate players for (default: football). "
-                 "Attributes are generic for now; per-sport attribute models come later.",
+            choices=sorted(SportLicense.ACTIVE_SPORTS),
+            help="Sport to generate players for (default: football). Only "
+                 "launch-set (active) sports can have players generated.",
+        )
+        parser.add_argument(
+            "--nationality", default=DEFAULT_COUNTRY,
+            choices=supported_countries(),
+            help="ISO country code driving name generation (default: HR).",
         )
 
     @transaction.atomic
     def handle(self, *args, **options):
         count = options["count"]
         sport = options["sport"]
+        nationality = options["nationality"]
         stat_field_names = [
             "agility", "strength", "speed", "acceleration", "jump", "stamina",
             "injury_resistance", "flexibility", "aggression", "bravery",
@@ -65,12 +57,13 @@ class Command(BaseCommand):
                 weights=[w for _, w in talent_weights],
             )[0]
             players.append(Player(
-                name=random_name(),
+                name=generate_name(nationality),
                 sport=sport,
                 age=Player.random_age(),
                 height_cm=random.randint(170, 200),
                 weight_kg=random.randint(65, 95),
-                country=random.choice(COUNTRIES),
+                country=COUNTRY_DISPLAY.get(nationality, nationality),
+                nationality=nationality,
                 talent_type=talent_type,
                 is_free_agent=True,
                 **kwargs,

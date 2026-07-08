@@ -50,6 +50,8 @@ class Player(models.Model):
     height_cm = models.PositiveSmallIntegerField()
     weight_kg = models.PositiveSmallIntegerField()
     country = models.CharField(max_length=100)
+    # ISO 3166-1 alpha-2 code driving name generation (Phase 3d).
+    nationality = models.CharField(max_length=2, default="HR")
 
     # Hidden from API responses to managers/club owners -- visible only via
     # the admin site. Drives monthly stat growth/decline.
@@ -87,6 +89,7 @@ class Player(models.Model):
 
     # --- ownership / status ---
     is_free_agent = models.BooleanField(default=True)
+    is_retired = models.BooleanField(default=False)
     is_starter_player = models.BooleanField(
         default=False, help_text="Starter players (all stats=1) can't be traded, only deleted."
     )
@@ -188,6 +191,23 @@ class AgeProcessingLog(models.Model):
 
     def __str__(self):
         return f"Aging run for {self.period} ({self.players_aged} players)"
+
+
+class SeasonPopulationLog(models.Model):
+    """Idempotency guard for the per-season `season_population` command
+    (retirement + youth intake + pool top-up). Same pattern as
+    AgeProcessingLog."""
+
+    period = models.CharField(max_length=10, unique=True)
+    retired = models.PositiveIntegerField(default=0)
+    youth_generated = models.PositiveIntegerField(default=0)
+    topped_up = models.PositiveIntegerField(default=0)
+    processed_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return (f"Population run for {self.period} "
+                f"(-{self.retired} retired, +{self.youth_generated} youth, "
+                f"+{self.topped_up} top-up)")
 
 
 class ClubDeal(models.Model):

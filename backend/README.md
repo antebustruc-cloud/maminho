@@ -7,6 +7,13 @@ exchanged over the API as integer LC** (like cents). Legacy field names such
 as `kc_balance` remain, but their values are LC. Serializers include
 `*_display` strings ("4.50 KC") for humans. Seasons run 3 per real year:
 S1 (Jan-Apr), S2 (May-Aug), S3 (Sep-Dec); players age +1 per season.
+
+## Launch scope (Phase 3d)
+Active sports: football, futsal, handball, basketball (team); mma, boxing,
+tennis (individual). Other coded sports are dormant (no licenses,
+registrations, or player generation). Each sport has a TRAINING facility
+(license requirement) and an EVENT facility (competitions, later phases).
+Population limits live in `maminho/limits.py`.
 Django + DRF API. See repo root README for project overview.
 
 ## Local dev (Docker)
@@ -39,6 +46,12 @@ API: `http://localhost:8000/api/`  |  Admin: `/admin/`
 
 # 1st of each month at 00:20 — NPC workforce payroll (after player wages)
 20 0 1 * * docker compose -f /root/maminho/docker-compose.yml exec -T backend python manage.py process_npc_wages >> /var/log/maminho/npc_wages.log 2>&1
+
+# 1st of each month at 00:25 — recurring facility staffing billing
+25 0 1 * * docker compose -f /root/maminho/docker-compose.yml exec -T backend python manage.py process_staffing_billing >> /var/log/maminho/staffing.log 2>&1
+
+# Season rollover: 1st of Jan/May/Sep at 00:30 — retirement, youth intake, pool top-up
+30 0 1 1,5,9 * docker compose -f /root/maminho/docker-compose.yml exec -T backend python manage.py season_population >> /var/log/maminho/population.log 2>&1
 
 # Every 10 minutes — complete ended construction projects (Phase 3b)
 */10 * * * * docker compose -f /root/maminho/docker-compose.yml exec -T backend python manage.py complete_construction >> /var/log/maminho/construction.log 2>&1
@@ -79,6 +92,9 @@ Or via the API (admin token required): `POST /api/matches/<id>/simulate/`
 | `/api/companies/share-offers/mine/` | GET | any | My share offers (made/received) |
 | `/api/companies/share-offers/<id>/accept/` | POST | recipient | Accept share offer |
 | `/api/companies/share-offers/<id>/decline/` | POST | either party | Decline/cancel offer |
+| `/api/clubs/staffing/` | GET | club_owner | My facility staffing contracts |
+| `/api/clubs/staffing/create/` | POST | club_owner | Set up cleaning/maintenance (in-house or company) |
+| `/api/clubs/staffing/<id>/cancel/` | POST | club_owner | Cancel staffing contract |
 | `/api/clubs/licenses/purchase/` | POST | club_owner | Buy sport license |
 | `/api/clubs/season/` | GET | any | Current season status |
 | `/api/players/manager/me/` | GET | manager | Manager profile + KC balance |

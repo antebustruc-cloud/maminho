@@ -69,21 +69,21 @@ LEVEL_CONFIG = {
     ),
     "fight_gym": _levels(
         (3000,   0,    4,  3,  1, False),
-        (4000,   100,  8,  7,  1, False),
-        (10000,  500,  15, 14, 2, True),
-        (25000,  1500, 30, 21, 3, True),
-        (60000,  4000, 60, 35, 4, True),
-        (140000, 9000, 110, 56, 7, True),
-        (300000, 18000, 220, 77, 10, True),
+        (4000,   0,  8,  7,  1, False),
+        (10000,   0,  15, 14, 2, True),
+        (25000,   0, 30, 21, 3, True),
+        (60000,   0, 60, 35, 4, True),
+        (140000,   0, 110, 56, 7, True),
+        (300000,   0, 220, 77, 10, True),
     ),
     "gym": _levels(
-        (5000,  0,    4,  3,  1, False),
-        (5000,  50,   6,  5,  1, False),
-        (10000, 200,  12, 7,  1, False),
-        (20000, 600,  25, 21, 2, True),
-        (45000, 1500, 45, 35, 4, True),
-        (90000, 3000, 80, 49, 6, True),
-        (180000, 6000, 150, 70, 9, True),
+        (5000,   0,    4,  3,  1, False),
+        (5000,   0,   6,  5,  1, False),
+        (10000,   0,  12, 7,  1, False),
+        (20000,   0,  25, 21, 2, True),
+        (45000,   0, 45, 35, 4, True),
+        (90000,   0, 80, 49, 6, True),
+        (180000,   0, 150, 70, 9, True),
     ),
     "medical_center": _levels(
         (8000,   0, 6,  7,  1, False),
@@ -97,9 +97,40 @@ LEVEL_CONFIG = {
 }
 
 
+# --- recurring staffing (Phase 3d) — required headcount per level 1..7 ---
+CLEANERS_REQUIRED = {
+    "stadium":        (1, 2, 4, 8, 15, 25, 40),
+    "sports_hall":    (1, 2, 4, 7, 12, 18, 28),
+    "swimming_pool":  (2, 3, 5, 8, 14, 22, 32),
+    "tennis_court":   (1, 1, 2, 4, 8, 14, 22),
+    "fight_gym":      (1, 2, 4, 6, 10, 16, 24),
+    "gym":            (1, 1, 2, 4, 7, 11, 16),
+    "medical_center": (1, 2, 3, 5, 8, 12, 18),
+}
+
+MAINTENANCE_REQUIRED = {
+    "stadium":        (1, 1, 2, 3, 5, 8, 12),
+    "sports_hall":    (1, 1, 2, 3, 5, 7, 10),
+    "swimming_pool":  (1, 2, 3, 4, 6, 9, 13),
+    "tennis_court":   (1, 1, 1, 2, 3, 5, 8),
+    "fight_gym":      (1, 1, 1, 2, 3, 4, 6),
+    "gym":            (1, 1, 1, 2, 3, 4, 6),
+    "medical_center": (1, 1, 2, 2, 3, 4, 6),
+}
+
+
+def staffing_required(facility_type, level, service_type):
+    """Required headcount for 'cleaning' or 'maintenance' at a given level."""
+    table = CLEANERS_REQUIRED if service_type == "cleaning" else MAINTENANCE_REQUIRED
+    return table[facility_type][level - 1]
+
+
 def level_config(facility_type, level):
     """Config dict for upgrading TO `level` for a facility type.
 
     Raises KeyError for unknown types/levels — callers validate first.
     """
-    return LEVEL_CONFIG[facility_type][level]
+    config = dict(LEVEL_CONFIG[facility_type][level])
+    config["cleaners_required"] = CLEANERS_REQUIRED[facility_type][level - 1]
+    config["maintenance_required"] = MAINTENANCE_REQUIRED[facility_type][level - 1]
+    return config

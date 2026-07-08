@@ -7,14 +7,20 @@ from accounts.models import User
 from economy.models import InsufficientFundsError, Transaction, move_kc
 
 from . import facility_config
-from .models import Club, ConstructionProject, Facility, Season, SeasonRegistration, SportLicense
+from .models import Club, ConstructionProject, Facility, FacilityStaffingContract, Season, SeasonRegistration, SportLicense
 from .serializers import (
     ClubSerializer,
     ConstructionProjectSerializer,
+    FacilityStaffingContractSerializer,
     SeasonRegistrationSerializer,
     SeasonSerializer,
 )
-from .services import register_for_season, start_construction
+from .services import (
+    cancel_staffing_contract,
+    create_staffing_contract,
+    register_for_season,
+    start_construction,
+)
 
 
 class IsClubOwner(permissions.BasePermission):
@@ -137,12 +143,15 @@ class PurchaseSportLicenseView(APIView):
         sport = request.data.get("sport")
         if sport not in SportLicense.Sport.values:
             raise ValidationError("Unknown sport.")
+        if not SportLicense.is_sport_active(sport):
+            raise ValidationError(f"{sport} is not part of the launch sport set.")
         if club.sport_licenses.filter(sport=sport).exists():
             raise ValidationError("Club already holds this license.")
 
-        required = SportLicense.REQUIRED_FACILITY[sport]
-        if not club.facilities.filter(facility_type=required).exists():
-            raise ValidationError(f"Requires a {required} facility first.")
+        required = SportLicense.TRAINING_FACILITY[sport]
+        facility = club.facilities.filter(facility_type=required).first()
+        if not facility or not facility.is_usable:
+            raise ValidationError(f"Requires a usable {required} training facility first.")
 
         cost = SportLicense.LICENSE_COSTS[sport]
         try:
@@ -169,3 +178,42 @@ class CurrentSeasonView(APIView):
                 return Response({"status": "offseason", "next_season": SeasonSerializer(offseason).data})
             return Response({"status": "offseason", "next_season": None})
         return Response({"status": "active", "season": SeasonSerializer(season).data})
+
+
+class CreateStaffingContractView(APIView):
+    """POST {facility, service_type, in_house | provider_company + monthly_price_lc}
+    — owner sets up recurring cleaning/maintenance (first month billed now)."""
+    permission_classes = [IsClubOwner]
+
+    def post(self, request):
+        from companies.models import Company
+        provider = Company.objects.filter(id=request.data.get("provider_company")).first()
+        contract = create_staffing_contract(
+            request.user.club,
+            request.data.get("facility"),
+            request.data.get("service_type"),
+            in_house=bool(request.data.get("in_house")),
+            provider_company=provider,
+            monthly_price_lc=request.data.get("monthly_price_lc"),
+        )
+        return Response(FacilityStaffingContractSerializer(contract).data,
+                        status=status.HTTP_201_CREATED)
+
+
+class CancelStaffingContractView(APIView):
+    permission_classes = [IsClubOwner]
+
+    def post(self, request, contract_id):
+        contract = cancel_staffing_contract(request.user.club, contract_id)
+        return Response(FacilityStaffingContractSerializer(contract).data)
+
+
+class MyStaffingContractsView(generics.ListAPIView):
+    permission_classes = [IsClubOwner]
+    serializer_class   = FacilityStaffingContractSerializer
+
+    def get_queryset(self):
+        return (FacilityStaffingContract.objects
+                .filter(facility__club=self.request.user.club)
+                .select_related("facility", "provider_company")
+                .order_by("active_until", "-active_from"))

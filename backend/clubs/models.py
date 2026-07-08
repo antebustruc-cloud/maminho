@@ -84,6 +84,27 @@ class Facility(models.Model):
             is_major=True,
         ).exists()
 
+    @property
+    def is_fully_staffed(self):
+        """SKELETON (Phase 3d): both service types have an active contract,
+        and company-provided ones still have the required headcount assigned.
+        No gameplay effects yet — tracked for later hygiene/condition phases."""
+        if self.level < 1:
+            return False
+        for service in ("cleaning", "maintenance"):
+            contract = self.staffing_contracts.filter(
+                service_type=service, active_until__isnull=True).first()
+            if contract is None:
+                return False
+            if not contract.in_house:
+                required = facility_config.staffing_required(
+                    self.facility_type, self.level, service)
+                assigned = contract.assigned_employees.filter(
+                    fired_at__isnull=True).count()
+                if assigned < required:
+                    return False
+        return True
+
     def upgrade_cost(self):
         """KC cost of the next level, from the level config."""
         return facility_config.level_config(self.facility_type, self.level + 1)["upgrade_cost_kc"]
@@ -154,8 +175,21 @@ class SportLicense(models.Model):
         Sport.CROSSFIT:      SportCategory.INDIVIDUAL,
     }
 
-    # Facility a club must own before it can license the sport.
-    REQUIRED_FACILITY = {
+    # Launch set (Phase 3d): only these sports can be licensed, registered,
+    # and have players generated. Everything else stays defined but dormant.
+    ACTIVE_SPORTS = frozenset({
+        Sport.FOOTBALL, Sport.FUTSAL, Sport.HANDBALL, Sport.BASKETBALL,
+        Sport.MMA, Sport.BOXING, Sport.TENNIS,
+    })
+
+    @classmethod
+    def is_sport_active(cls, sport):
+        return sport in cls.ACTIVE_SPORTS
+
+    # Facility the club must own (usable) to hold/keep the sport license —
+    # where its players TRAIN. Used by license purchase and season
+    # registration validation.
+    TRAINING_FACILITY = {
         Sport.FOOTBALL:      Facility.FacilityType.STADIUM,
         Sport.FUTSAL:        Facility.FacilityType.SPORTS_HALL,
         Sport.HANDBALL:      Facility.FacilityType.SPORTS_HALL,
@@ -178,6 +212,36 @@ class SportLicense(models.Model):
         Sport.WEIGHTLIFTING: Facility.FacilityType.GYM,
         Sport.BODYBUILDING:  Facility.FacilityType.GYM,
         Sport.CROSSFIT:      Facility.FacilityType.GYM,
+    }
+
+    # Facility where the sport's COMPETITIONS happen (used by the events/
+    # fixtures system in a later phase). Fight sports train in the fight gym
+    # but compete in a sports hall; strength sports likewise. gym and
+    # fight_gym host no events and have no seats; gym and medical_center are
+    # support facilities no sport requires for events.
+    EVENT_FACILITY = {
+        Sport.FOOTBALL:      Facility.FacilityType.STADIUM,
+        Sport.FUTSAL:        Facility.FacilityType.SPORTS_HALL,
+        Sport.HANDBALL:      Facility.FacilityType.SPORTS_HALL,
+        Sport.BASKETBALL:    Facility.FacilityType.SPORTS_HALL,
+        Sport.VOLLEYBALL:    Facility.FacilityType.SPORTS_HALL,
+        Sport.WATER_POLO:    Facility.FacilityType.SWIMMING_POOL,
+        Sport.MARATHON:      Facility.FacilityType.STADIUM,
+        Sport.SPRINT_100M:   Facility.FacilityType.STADIUM,
+        Sport.SPRINT_400M:   Facility.FacilityType.STADIUM,
+        Sport.SWIMMING:      Facility.FacilityType.SWIMMING_POOL,
+        Sport.TENNIS:        Facility.FacilityType.TENNIS_COURT,
+        Sport.TABLE_TENNIS:  Facility.FacilityType.SPORTS_HALL,
+        Sport.MMA:           Facility.FacilityType.SPORTS_HALL,
+        Sport.BOXING:        Facility.FacilityType.SPORTS_HALL,
+        Sport.KICKBOXING:    Facility.FacilityType.SPORTS_HALL,
+        Sport.WRESTLING:     Facility.FacilityType.SPORTS_HALL,
+        Sport.BJJ:           Facility.FacilityType.SPORTS_HALL,
+        Sport.JUDO:          Facility.FacilityType.SPORTS_HALL,
+        Sport.POWERLIFTING:  Facility.FacilityType.SPORTS_HALL,
+        Sport.WEIGHTLIFTING: Facility.FacilityType.SPORTS_HALL,
+        Sport.BODYBUILDING:  Facility.FacilityType.SPORTS_HALL,
+        Sport.CROSSFIT:      Facility.FacilityType.SPORTS_HALL,
     }
 
     # License cost as integer LC — placeholder values (football = 70000 LC = 700 KC).
@@ -359,3 +423,48 @@ class SeasonRegistration(models.Model):
 
     def __str__(self):
         return f"{self.club.name} registered for {self.season.name} ({self.sport})"
+
+
+class FacilityStaffingContract(models.Model):
+    """
+    Recurring cleaning/maintenance staffing for one facility (Phase 3d —
+    SKELETON: billing and worker assignment are real, hygiene/condition
+    effects come in a later phase).
+
+    Provider is EITHER a company (cleaning company for cleaning,
+    construction company for maintenance) at a freely agreed monthly price
+    (0 allowed), OR in-house at a fixed formula price (headcount × base NPC
+    wage × 5). Billed monthly, same cron day as payroll.
+    """
+
+    class ServiceType(models.TextChoices):
+        CLEANING    = "cleaning",    "Cleaning"
+        MAINTENANCE = "maintenance", "Maintenance"
+
+    facility         = models.ForeignKey(Facility, on_delete=models.CASCADE,
+                                         related_name="staffing_contracts")
+    service_type     = models.CharField(max_length=12, choices=ServiceType.choices)
+    provider_company = models.ForeignKey("companies.Company", null=True, blank=True,
+                                         on_delete=models.PROTECT,
+                                         related_name="staffing_contracts")
+    in_house         = models.BooleanField(default=False)
+    monthly_price_lc = models.PositiveIntegerField()  # integer LC
+    active_from      = models.DateTimeField(auto_now_add=True)
+    active_until     = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["facility", "service_type"],
+                condition=models.Q(active_until__isnull=True),
+                name="one_active_contract_per_facility_service",
+            ),
+        ]
+
+    @property
+    def is_active(self):
+        return self.active_until is None
+
+    def __str__(self):
+        provider = "in-house" if self.in_house else str(self.provider_company)
+        return f"{self.service_type} for {self.facility} via {provider}"

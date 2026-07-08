@@ -2,6 +2,9 @@ from django.urls import path
 
 from .views import (
     BuildFacilityView,
+    CancelStaffingContractView,
+    CreateStaffingContractView,
+    MyStaffingContractsView,
     CurrentSeasonView,
     FacilityLevelConfigView,
     MyClubView,
@@ -24,4 +27,7 @@ urlpatterns = [
     path("season/",                         CurrentSeasonView.as_view(),       name="current-season"),
     path("seasons/<int:season_id>/register/",      RegisterForSeasonView.as_view(),   name="register-for-season"),
     path("seasons/<int:season_id>/registrations/", SeasonRegistrationsView.as_view(), name="season-registrations"),
+    path("staffing/",                       MyStaffingContractsView.as_view(),   name="my-staffing-contracts"),
+    path("staffing/create/",                CreateStaffingContractView.as_view(), name="create-staffing-contract"),
+    path("staffing/<int:contract_id>/cancel/", CancelStaffingContractView.as_view(), name="cancel-staffing-contract"),
 ]

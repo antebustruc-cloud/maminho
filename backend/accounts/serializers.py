@@ -24,6 +24,12 @@ class RegisterSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if attrs["role"] == User.Role.CLUB_OWNER and not attrs.get("club_name"):
             raise serializers.ValidationError("club_name is required when registering as a club owner.")
+        if attrs["role"] == User.Role.MANAGER:
+            from maminho import limits
+            if ManagerProfile.objects.count() >= limits.MAX_MANAGERS_PER_LEAGUE:
+                raise serializers.ValidationError(
+                    f"The league has reached its manager cap "
+                    f"({limits.MAX_MANAGERS_PER_LEAGUE}). Registration is closed.")
         return attrs
 
     @transaction.atomic

@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from economy.models import lc_display
 
-from .models import Club, ConstructionProject, Facility, Season, SeasonRegistration, SportLicense
+from .models import Club, ConstructionProject, Facility, FacilityStaffingContract, Season, SeasonRegistration, SportLicense
 
 
 class FacilitySerializer(serializers.ModelSerializer):
@@ -67,3 +67,21 @@ class SeasonSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Season
         fields = ["id", "name", "sport", "status", "start_date", "end_date"]
+
+
+class FacilityStaffingContractSerializer(serializers.ModelSerializer):
+    facility_type = serializers.CharField(source="facility.facility_type", read_only=True)
+    provider_name = serializers.SerializerMethodField()
+    monthly_price_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = FacilityStaffingContract
+        fields = ["id", "facility", "facility_type", "service_type", "provider_company",
+                  "provider_name", "in_house", "monthly_price_lc",
+                  "monthly_price_display", "active_from", "active_until"]
+
+    def get_provider_name(self, obj):
+        return "in-house" if obj.in_house else (obj.provider_company.name if obj.provider_company else None)
+
+    def get_monthly_price_display(self, obj):
+        return lc_display(obj.monthly_price_lc)

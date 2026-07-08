@@ -48,6 +48,7 @@ class Transaction(models.Model):
         COMPANY_FOUNDING = "company_founding", "Company founding fee"
         DIVIDEND = "dividend", "Company dividend payout"
         NPC_WAGE = "npc_wage", "Company pays NPC workforce wages"
+        STAFFING = "staffing", "Recurring facility staffing fee"
 
     from_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

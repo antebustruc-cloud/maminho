@@ -122,6 +122,11 @@ class ClubDealCreateView(APIView):
         if not club:
             raise ValidationError("Club not found.")
 
+        from maminho import limits
+        if club.squad.count() >= limits.MAX_ROSTER_PER_CLUB:
+            raise ValidationError(
+                f"{club.name} roster is full (max {limits.MAX_ROSTER_PER_CLUB} players).")
+
         monthly_fee = request.data.get("monthly_fee")
         signing_bonus = request.data.get("signing_bonus", 0)
         length_years = request.data.get("length_years")

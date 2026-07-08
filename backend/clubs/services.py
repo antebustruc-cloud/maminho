@@ -145,15 +145,132 @@ def register_for_season(club, season):
         raise ValidationError("Registration is only open before the season starts.")
     if SeasonRegistration.objects.filter(club=club, season=season).exists():
         raise ValidationError("Club is already registered for this season.")
+    if not SportLicense.is_sport_active(season.sport):
+        raise ValidationError(f"{season.sport} is not part of the launch sport set.")
     if not club.sport_licenses.filter(sport=season.sport).exists():
         raise ValidationError(f"Club holds no {season.sport} license.")
 
-    required = SportLicense.REQUIRED_FACILITY[season.sport]
+    required = SportLicense.TRAINING_FACILITY[season.sport]
     facility = club.facilities.filter(facility_type=required).first()
     if not facility or not facility.is_usable:
         raise ValidationError(
-            f"Requires a usable {required} facility. A facility under major "
-            "construction is unusable — the club skips this season."
+            f"Requires a usable {required} training facility. A facility under "
+            "major construction is unusable — the club skips this season."
         )
 
     return SeasonRegistration.objects.create(club=club, season=season, sport=season.sport)
+
+
+# --- recurring facility staffing (Phase 3d) ---
+
+# In-house staffing price formula: headcount × base NPC wage × this factor.
+IN_HOUSE_WAGE_FACTOR = 5
+
+
+def in_house_price_lc(facility, service_type):
+    from companies.models import DEFAULT_WAGES_LC
+    worker = "cleaner" if service_type == "cleaning" else "construction_worker"
+    headcount = facility_config.staffing_required(
+        facility.facility_type, max(facility.level, 1), service_type)
+    return headcount * DEFAULT_WAGES_LC[worker] * IN_HOUSE_WAGE_FACTOR
+
+
+@transaction.atomic
+def create_staffing_contract(club, facility_id, service_type, *, in_house=False,
+                             provider_company=None, monthly_price_lc=None):
+    """
+    Owner sets up recurring cleaning or maintenance for one facility.
+    - in_house: fixed formula price (headcount × base NPC wage × 5), paid
+      monthly to the central bank.
+    - company: cleaning company for cleaning, construction company for
+      maintenance; freely agreed monthly price (0 allowed); the company
+      must have enough FREE workers of the right type — they're assigned
+      to the contract until it's cancelled.
+    First month is billed immediately at creation; then monthly by cron.
+    """
+    from companies.models import Company, Employee
+    from .models import FacilityStaffingContract
+
+    facility = club.facilities.filter(id=facility_id).first()
+    if not facility:
+        raise ValidationError("Not your facility.")
+    if facility.level < 1:
+        raise ValidationError("Facility isn't built yet.")
+    if service_type not in FacilityStaffingContract.ServiceType.values:
+        raise ValidationError("service_type must be cleaning or maintenance.")
+    if facility.staffing_contracts.filter(service_type=service_type,
+                                          active_until__isnull=True).exists():
+        raise ValidationError(f"Facility already has an active {service_type} contract.")
+
+    required = facility_config.staffing_required(
+        facility.facility_type, facility.level, service_type)
+
+    if in_house:
+        price = in_house_price_lc(facility, service_type)
+        contract = FacilityStaffingContract.objects.create(
+            facility=facility, service_type=service_type, in_house=True,
+            monthly_price_lc=price)
+        _bill_staffing_contract(contract)  # first month up front
+        return contract
+
+    # --- company-provided ---
+    expected_type = (Company.CompanyType.CLEANING
+                     if service_type == "cleaning"
+                     else Company.CompanyType.CONSTRUCTION)
+    if not provider_company or provider_company.company_type != expected_type \
+            or not provider_company.is_active:
+        raise ValidationError(
+            f"{service_type} requires an active {expected_type} company as provider.")
+    try:
+        price = int(monthly_price_lc)
+    except (TypeError, ValueError):
+        raise ValidationError("monthly_price_lc is required (integer LC; 0 allowed).")
+    if price < 0:
+        raise ValidationError("monthly_price_lc cannot be negative.")
+
+    worker_type = ("cleaner" if service_type == "cleaning" else "construction_worker")
+    workers = list(provider_company.free_employees(worker_type)
+                   .select_for_update()[:required])
+    if len(workers) < required:
+        raise ValidationError(
+            f"{provider_company.name} has only {len(workers)} free "
+            f"{worker_type}s; this facility needs {required}.")
+
+    contract = FacilityStaffingContract.objects.create(
+        facility=facility, service_type=service_type,
+        provider_company=provider_company, monthly_price_lc=price)
+    for employee in workers:
+        employee.current_contract = contract
+        employee.save(update_fields=["current_contract"])
+    _bill_staffing_contract(contract)  # first month up front
+    return contract
+
+
+def _bill_staffing_contract(contract):
+    """One monthly charge: club owner → central bank (in-house) or club
+    owner → provider company. Price 0 → nothing to move. Raises
+    InsufficientFundsError upward for the caller to handle."""
+    if contract.monthly_price_lc == 0:
+        return
+    club = contract.facility.club
+    to_holder = None if contract.in_house else contract.provider_company
+    provider = "in-house crew" if contract.in_house else contract.provider_company.name
+    move_kc(from_holder=club, to_holder=to_holder,
+            amount=contract.monthly_price_lc, kind=Transaction.Kind.STAFFING,
+            description=f"Monthly {contract.service_type} staffing "
+                        f"({provider}) for {contract.facility.facility_type}")
+
+
+@transaction.atomic
+def cancel_staffing_contract(club, contract_id):
+    """Owner cancels; assigned company workers free up immediately."""
+    from .models import FacilityStaffingContract
+
+    contract = FacilityStaffingContract.objects.filter(
+        id=contract_id, facility__club=club, active_until__isnull=True).first()
+    if not contract:
+        raise ValidationError("No such active staffing contract on your facilities.")
+    contract.active_until = timezone.now()
+    contract.save(update_fields=["active_until"])
+    contract.assigned_employees.update(current_contract=None)
+    return contract

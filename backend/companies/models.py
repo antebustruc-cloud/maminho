@@ -58,7 +58,8 @@ class Company(models.Model):
 
     def free_employees(self, worker_type=None):
         """Active employees not assigned to an active construction project."""
-        qs = self.employees.filter(fired_at__isnull=True, current_project__isnull=True)
+        qs = self.employees.filter(fired_at__isnull=True, current_project__isnull=True,
+                                   current_contract__isnull=True)
         if worker_type:
             qs = qs.filter(worker_type=worker_type)
         return qs
@@ -144,11 +145,17 @@ class Employee(models.Model):
     # cleared automatically on project completion.
     current_project = models.ForeignKey("clubs.ConstructionProject", null=True, blank=True,
                                         on_delete=models.SET_NULL, related_name="assigned_employees")
+    # Set while assigned to a recurring staffing contract (Phase 3d);
+    # cleared when the contract is cancelled.
+    current_contract = models.ForeignKey("clubs.FacilityStaffingContract", null=True,
+                                         blank=True, on_delete=models.SET_NULL,
+                                         related_name="assigned_employees")
 
     @property
     def is_active(self):
         return self.fired_at is None
 
     def __str__(self):
-        state = "fired" if self.fired_at else ("assigned" if self.current_project_id else "free")
+        assigned = self.current_project_id or self.current_contract_id
+        state = "fired" if self.fired_at else ("assigned" if assigned else "free")
         return f"{self.get_worker_type_display()} @ {self.company.name} ({state})"
